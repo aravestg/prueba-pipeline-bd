@@ -58,8 +58,23 @@ jobs:
             rm -rf "$WORK"
           done <<< "${{ steps.detect.outputs.changes }}"
 
-      - uses: actions/upload-artifact@v4
+      - name: Detectar nombre del ZIP
+        id: zipname
         if: steps.detect.outputs.changes != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          F=$(ls artifacts/*.zip)
+          # Si hubiese varios, toma el primero y avisa
+          if [ "$(printf '%s\n' $F | wc -l)" -ne 1 ]; then
+            echo "::warning ::Se generaron múltiples ZIPs; se usará el primero para nombrar el artifact."
+          fi
+          BASENAME=$(basename $(printf '%s\n' $F | head -n1))
+          echo "file=$BASENAME" >> "$GITHUB_OUTPUT"
+
+      - name: Subir artifact (mismo nombre que el ZIP)
+        if: steps.detect.outputs.changes != ''
+        uses: actions/upload-artifact@v4
         with:
-          name: STG-db
-          path: artifacts/*.zip
+          name: ${{ steps.zipname.outputs.file }}
+          path: artifacts/${{ steps.zipname.outputs.file }}
