@@ -1,0 +1,1 @@
+GRANT SELECT, INSERT, UPDATE ON FINANZAS:tabla_clientes TO role_app;

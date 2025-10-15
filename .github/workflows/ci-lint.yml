@@ -1,0 +1,19 @@
+name: DB CI (Lint & Checks)
+
+on:
+  pull_request:
+    branches: [ "staging" ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint SQL básico
+        run: python3 pipelines/lint_sql.py db
+      - name: Verificar estructura install/rollback
+        run: python3 pipelines/check_change_folders.py db/migrations
+      - name: Detectar statements riesgosos
+        run: python3 pipelines/detect_peligrosos.py db/migrations
+      - name: Resultado
+        run: echo "Validación completada"

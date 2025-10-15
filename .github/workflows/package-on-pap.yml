@@ -1,0 +1,34 @@
+name: Empaquetar cambio en ramas PAP-*
+
+on:
+  push:
+    branches:
+      - "PAP-*"
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detectar carpeta del cambio
+        id: detect
+        run: |
+          # Heurística: buscar carpeta bajo db/migrations que esté referenciada en el último commit
+          CHG=$(git diff --name-only HEAD~1..HEAD | grep -m1 '^db/migrations/' | cut -d/ -f1-3 || true)
+          if [ -z "$CHG" ]; then
+            # Fallback: primera carpeta
+            CHG=$(ls -d db/migrations/* | head -n1)
+          fi
+          echo "change_dir=$CHG" >> $GITHUB_OUTPUT
+          echo "Carpeta detectada: $CHG"
+      - name: Empaquetar
+        run: |
+          CHG="${{ steps.detect.outputs.change_dir }}"
+          NAME="$(basename "$CHG")"
+          mkdir -p artifacts
+          zip -r "artifacts/${NAME}.zip" "$CHG"
+      - name: Subir artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: paquete-migracion
+          path: artifacts/*.zip
