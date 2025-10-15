@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
   pap-package:
@@ -15,38 +14,42 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
-      - name: Detectar carpetas de cambio del último commit
+      - name: Detectar carpetas del último commit
         id: detect
         shell: bash
         run: |
-          # En ramas PAP lo normal es cherry-pick del merge commit del PR
+          set -euo pipefail
           CHANGES=$(git diff --name-only HEAD~1..HEAD \
                    | grep '^db/migrations/' | cut -d/ -f1-3 | sort -u || true)
-          echo "changes<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGES"      >> $GITHUB_OUTPUT
-          echo "EOF"           >> $GITHUB_OUTPUT
+          {
+            echo "changes<<__CHANGES__"
+            echo "$CHANGES"
+            echo "__CHANGES__"
+          } >> "$GITHUB_OUTPUT"
           echo "$CHANGES"
 
       - name: Empaquetar PAP (solo carpetas detectadas)
         if: steps.detect.outputs.changes != ''
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p artifacts tmp
           SHORT="${GITHUB_SHA::7}"
           while read -r DIR; do
-            [ -z "$DIR" ] && continue
+            [ -z "${DIR:-}" ] && continue
             ID=$(basename "$DIR")
             WORK="tmp/$ID"; mkdir -p "$WORK"
             [ -d "$DIR/install"  ] && cp -r "$DIR/install"  "$WORK/install"
             [ -d "$DIR/rollback" ] && cp -r "$DIR/rollback" "$WORK/rollback"
             [ -d "db/validaciones" ] && cp -r db/validaciones "$WORK/validaciones"
-            cat > "$WORK/MANIFEST.txt" <<EOF
-           id=$ID
-           tipo=PAP
-            branch=${GITHUB_REF_NAME}
-           sha=${GITHUB_SHA}
-            fecha=$(date -u +%F_%H%M%SZ)
-           EOF
+            NOW="$(date -u +%F_%H%M%SZ)"
+            printf '%s\n' \
+              "id=$ID" \
+              "tipo=PAP" \
+              "branch=${GITHUB_REF_NAME}" \
+              "sha=${GITHUB_SHA}" \
+              "fecha=${NOW}" \
+              > "$WORK/MANIFEST.txt"
             (cd tmp && zip -r "../artifacts/PAP-${ID}-${SHORT}.zip" "$ID")
             rm -rf "$WORK"
           done <<< "${{ steps.detect.outputs.changes }}"
