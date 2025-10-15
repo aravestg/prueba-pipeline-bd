@@ -1,0 +1,63 @@
+name: DB STG package on merged PR
+
+on:
+  pull_request:
+    branches: [ "staging" ]
+    types: [ closed ]
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  stg-package:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Detectar carpetas de cambio EXACTAS del merge
+        id: detect
+        shell: bash
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          MERGE="${{ github.event.pull_request.merge_commit_sha }}"
+          # Diff entre staging antes del PR (BASE) y el merge commit del PR (MERGE)
+          CHANGES=$(git diff --name-only "$BASE" "$MERGE" \
+                   | grep '^db/migrations/' | cut -d/ -f1-3 | sort -u || true)
+          echo "changes<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGES"      >> $GITHUB_OUTPUT
+          echo "EOF"           >> $GITHUB_OUTPUT
+          echo "$CHANGES"
+
+      - name: Empaquetar STG (solo carpetas detectadas)
+        if: steps.detect.outputs.changes != ''
+        shell: bash
+        run: |
+          mkdir -p artifacts tmp
+          SHORT="${{ github.event.pull_request.merge_commit_sha }}" 
+          SHORT="${SHORT::7}"
+          while read -r DIR; do
+            [ -z "$DIR" ] && continue
+            ID=$(basename "$DIR")
+            WORK="tmp/$ID"; mkdir -p "$WORK"
+            [ -d "$DIR/install"  ] && cp -r "$DIR/install"  "$WORK/install"
+            [ -d "$DIR/rollback" ] && cp -r "$DIR/rollback" "$WORK/rollback"
+            [ -d "db/validaciones" ] && cp -r db/validaciones "$WORK/validaciones"
+            cat > "$WORK/MANIFEST.txt" <<EOF
+            id=$ID
+            tipo=STG
+            pr=${{ github.event.pull_request.html_url }}
+            merge_sha=${{ github.event.pull_request.merge_commit_sha }}
+             fecha=$(date -u +%F_%H%M%SZ)
+             EOF
+            (cd tmp && zip -r "../artifacts/STG-${ID}-${SHORT}.zip" "$ID")
+            rm -rf "$WORK"
+          done <<< "${{ steps.detect.outputs.changes }}"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.detect.outputs.changes != ''
+        with:
+          name: STG-db
+          path: artifacts/*.zip
