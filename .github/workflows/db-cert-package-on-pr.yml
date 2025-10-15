@@ -1,0 +1,62 @@
+name: DB CERT package on PR
+
+on:
+  pull_request:
+    branches: [ "staging" ]
+    types: [closed]
+
+permissions:
+  contents: read
+  actions: write
+  pull-requests: write
+
+jobs:
+  cert-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Detectar carpetas de cambio del PR
+        id: detect
+        shell: bash
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          CHANGES=$(git diff --name-only "$BASE" "$HEAD" \
+                   | grep '^db/migrations/' | cut -d/ -f1-3 | sort -u || true)
+          echo "changes<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGES"      >> $GITHUB_OUTPUT
+          echo "EOF"           >> $GITHUB_OUTPUT
+          echo "$CHANGES"
+
+      - name: Empaquetar CERT (solo carpetas detectadas)
+        if: steps.detect.outputs.changes != ''
+        shell: bash
+        run: |
+          mkdir -p artifacts tmp
+          SHORT="${GITHUB_SHA::7}"
+          while read -r DIR; do
+            [ -z "$DIR" ] && continue
+            ID=$(basename "$DIR")
+            WORK="tmp/$ID"; mkdir -p "$WORK"
+            [ -d "$DIR/install"  ] && cp -r "$DIR/install"  "$WORK/install"
+            [ -d "$DIR/rollback" ] && cp -r "$DIR/rollback" "$WORK/rollback"
+            [ -d "db/validaciones" ] && cp -r db/validaciones "$WORK/validaciones"
+            cat > "$WORK/MANIFEST.txt" <<EOF
+            id=$ID
+            tipo=CERT
+            pr=${{ github.event.pull_request.html_url }}
+            branch=${{ github.head_ref }}
+            sha=${GITHUB_SHA}
+            fecha=$(date -u +%F_%H%M%SZ)
+            EOF
+            (cd tmp && zip -r "../artifacts/CERT-${ID}-${SHORT}.zip" "$ID")
+            rm -rf "$WORK"
+          done <<< "${{ steps.detect.outputs.changes }}"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.detect.outputs.changes != ''
+        with:
+          name: CERT-db
+          path: artifacts/*.zip
