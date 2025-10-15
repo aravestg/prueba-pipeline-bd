@@ -50,8 +50,8 @@ jobs:
             tipo=STG
             pr=${{ github.event.pull_request.html_url }}
             merge_sha=${{ github.event.pull_request.merge_commit_sha }}
-             fecha=$(date -u +%F_%H%M%SZ)
-             EOF
+            fecha=$(date -u +%F_%H%M%SZ)
+            EOF
             (cd tmp && zip -r "../artifacts/STG-${ID}-${SHORT}.zip" "$ID")
             rm -rf "$WORK"
           done <<< "${{ steps.detect.outputs.changes }}"
