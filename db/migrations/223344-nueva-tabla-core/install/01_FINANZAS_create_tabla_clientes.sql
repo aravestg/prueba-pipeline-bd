@@ -5,3 +5,4 @@ CREATE TABLE FINANZAS:tabla_clientes (
   nombre     VARCHAR(120) NOT NULL,
   fecha_alta DATETIME YEAR TO DAY NOT NULL
 );
+
