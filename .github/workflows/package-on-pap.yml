@@ -1,34 +1,62 @@
-name: Empaquetar cambio en ramas PAP-*
+name: DB PAP package on branch
 
 on:
   push:
-    branches:
-      - "PAP-*"
+    branches: [ "PAP-*" ]
+
+permissions:
+  contents: read
+  actions: write
 
 jobs:
-  package:
+  pap-package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Detectar carpeta del cambio
+        with: { fetch-depth: 0 }
+
+      - name: Detectar carpetas de cambio del último commit
         id: detect
+        shell: bash
         run: |
-          # Heurística: buscar carpeta bajo db/migrations que esté referenciada en el último commit
-          CHG=$(git diff --name-only HEAD~1..HEAD | grep -m1 '^db/migrations/' | cut -d/ -f1-3 || true)
-          if [ -z "$CHG" ]; then
-            # Fallback: primera carpeta
-            CHG=$(ls -d db/migrations/* | head -n1)
-          fi
-          echo "change_dir=$CHG" >> $GITHUB_OUTPUT
-          echo "Carpeta detectada: $CHG"
-      - name: Empaquetar
+          # En ramas PAP lo normal es cherry-pick del merge commit del PR
+          CHANGES=$(git diff --name-only HEAD~1..HEAD \
+                   | grep '^db/migrations/' | cut -d/ -f1-3 | sort -u || true)
+          echo "changes<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGES"      >> $GITHUB_OUTPUT
+          echo "EOF"           >> $GITHUB_OUTPUT
+          echo "$CHANGES"
+
+      - name: Empaquetar PAP (solo carpetas detectadas)
+        if: steps.detect.outputs.changes != ''
+        shell: bash
         run: |
-          CHG="${{ steps.detect.outputs.change_dir }}"
-          NAME="$(basename "$CHG")"
-          mkdir -p artifacts
-          zip -r "artifacts/${NAME}.zip" "$CHG"
-      - name: Subir artifact
-        uses: actions/upload-artifact@v4
+          mkdir -p artifacts tmp
+          SHORT="${GITHUB_SHA::7}"
+          while read -r DIR; do
+            [ -z "$DIR" ] && continue
+            ID=$(basename "$DIR")
+            WORK="tmp/$ID"; mkdir -p "$WORK"
+            [ -d "$DIR/install"  ] && cp -r "$DIR/install"  "$WORK/install"
+            [ -d "$DIR/rollback" ] && cp -r "$DIR/rollback" "$WORK/rollback"
+            [ -d "db/validaciones" ] && cp -r db/validaciones "$WORK/validaciones"
+            cat > "$WORK/MANIFEST.txt" <<EOF
+           id=$ID
+           tipo=PAP
+            branch=${GITHUB_REF_NAME}
+           sha=${GITHUB_SHA}
+            fecha=$(date -u +%F_%H%M%SZ)
+           EOF
+            (cd tmp && zip -r "../artifacts/PAP-${ID}-${SHORT}.zip" "$ID")
+            rm -rf "$WORK"
+          done <<< "${{ steps.detect.outputs.changes }}"
+
+      - name: Checksums
+        if: steps.detect.outputs.changes != ''
+        run: (cd artifacts && shasum -a 256 *.zip > checksums.sha256)
+
+      - uses: actions/upload-artifact@v4
+        if: steps.detect.outputs.changes != ''
         with:
-          name: paquete-migracion
-          path: artifacts/*.zip
+          name: PAP-db
+          path: artifacts/*
