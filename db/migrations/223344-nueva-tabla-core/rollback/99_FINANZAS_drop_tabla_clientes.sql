@@ -1,0 +1,4 @@
+BEGIN WORK;
+DROP INDEX FINANZAS:idx_clientes_rut;
+DROP TABLE FINANZAS:tabla_clientes;
+COMMIT WORK;
