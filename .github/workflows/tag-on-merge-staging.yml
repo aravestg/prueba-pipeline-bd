@@ -5,6 +5,9 @@ on:
     types: [closed]
     branches: [ "staging" ]
 
+permissions:
+  contents: write   # necesario para push del tag
+
 jobs:
   tag:
     if: github.event.pull_request.merged == true
@@ -13,12 +16,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Crear tag PAP-<rama>-<sha7>
-        env:
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-          SHA7: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - name: Configurar identidad git para el tag
         run: |
-          SHORT=${SHA7:0:7}
-          TAG="PAP-${HEAD_REF}-${SHORT}"
-          git tag -a "$TAG" -m "Tag automático PAP para ${HEAD_REF} (${SHORT})"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Calcular SHA y nombre de tag
+        id: vars
+        run: |
+          MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+          # Fallback por si merge_commit_sha viene vacío (casos raros)
+          if [ -z "$MERGE_SHA" ]; then MERGE_SHA="${{ github.sha }}"; fi
+          echo "sha=$MERGE_SHA" >> $GITHUB_OUTPUT
+          echo "short=${MERGE_SHA::7}" >> $GITHUB_OUTPUT
+          echo "ref=${{ github.event.pull_request.head.ref }}" >> $GITHUB_OUTPUT
+
+      - name: Crear y publicar tag anotado
+        run: |
+          TAG="PAP-${{ steps.vars.outputs.ref }}-${{ steps.vars.outputs.short }}"
+          git tag -a "$TAG" "${{ steps.vars.outputs.sha }}" -m "Tag automático PAP para ${{ github.event.pull_request.html_url }}"
           git push origin "$TAG"
